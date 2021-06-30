@@ -1,98 +1,138 @@
 
-// Uno portion of WiFi Relay Controller Project 
+//#define DS(...) Serial.print(__VA_ARGS__);
+//#define DL(...) Serial.println(__VA_ARGS__);
+#define DL(...)
+#define DS(...)
 
-// make sure this matches esp
-const long serial_baud = 115200;
+#define RELAY_COUNT 8
+#define RELAY_OFFSET 2
 
-//quick debug macros, so you can test with serial monitor
-//first line prints to serial, second does nothing
-//either one will have to be compiled
-#define D(...) Serial.println(__VA_ARGS__);
-//#define D(...) 
+#define LEN_SERIAL_BUFFER 200
 
+#define CMD_UNKNOWN 0
+#define CMD_INIT 1
+#define CMD_RELAY_BASE 2
+//... until CMD_RELAY 9
 
-const int relay_start = 2;
-const int relay_length = 8;
 const int status_led = LED_BUILTIN;
 
 
 void setup(){
+  Serial.begin(115200); 
 
-  Serial.begin(serial_baud); 
+  for(int i = 0; i < RELAY_COUNT; i++){
+    pinMode(RELAY_OFFSET + i, OUTPUT);
 
-  for(int i = 0; i < relay_length; i++){
-    pinMode(relay_start + i, OUTPUT);
-
-    D("set relay on pin")
-    D(relay_start + i)
-
+    DS("set relay on pin")
+    DL(RELAY_OFFSET + i)
   }
-
 }
 
 void loop(){
+  int len;
+  char command[LEN_SERIAL_BUFFER];
+  char commandValue[LEN_SERIAL_BUFFER];
+  
+  if(!Serial.available())
+    return;
 
-  /*command packets are in the form of:
-    >Ha 
-    
-    > - start command 
-    H - hex digit of relay ( 1 -> 16), '1' to '8' is what we need
-    a - activate, will leave on until it reaches
-    c - close, or any other character in this place
-  */
-
-
-  //this will skip until read reaches '>'
-
-  while(readSerial() != '>' )
-    continue; 
-
-  D("read >")
-  //now we have already read '>'
-  //next character will be the relay
-  char relayCharacter = readSerial();
-  int relay = charToRelay(relayCharacter);
-
-  D("RelayCode:")
-  D(relay)
-  //error code
-  if ( relay == -1){
-    //skip this one, start loop again
+  len = Serial.readBytesUntil('\n', command, LEN_SERIAL_BUFFER);
+  if(len <= 0){
+    DL("Serial read did not produce a result");
     return;
   }
-
-  //now the final character should be the mode 
-  char modeCharacter = readSerial();
-
-  //"inline if" statement, is it 'a' ? make mode HIGH else LOW;
-  int mode = (modeCharacter == 'a')? HIGH : LOW;
-  D("Mode: char")
-  D(modeCharacter)
-  D("Mode: bool")
-  D(mode)
-
-  //then finally run it and loop again
-
-  digitalWrite(relay_start + relay, mode);
-}
-
-//simple 'blocking' function to wait until we receive something
-char readSerial(){
-  while(! Serial.available())
-    continue;
-  return Serial.read();
-}
-
-int charToRelay(char incoming){
-
-  if (incoming >= '0' && incoming <= '9' ){
-    //just a standard digit;
-    return incoming - '0';
-  } else if ( incoming >= 'A' && incoming <= 'F'){
-    //hex digit
-    return incoming - 'A' + 10;
-  } else {
-    //out of range, not good
-    return -1; 
+  command[len] = '\0';
+  
+  int parsedCmd = parseCommand(command);
+  if(parsedCmd <= 0){
+    DL("Command unkown");
+    return;
   }
+  DS("Found command ");
+  DL(parsedCmd);
+  
+  switch(command[0]){
+    case '>':
+      if (getValueFromSerial(commandValue, LEN_SERIAL_BUFFER) <= 0) {
+        DL("Value could not be read");
+        return;
+      }
+      break;
+    case '/':
+      break;
+    default:
+      DL("Command could not be understood");
+  }
+
+  executeCommand(parsedCmd, commandValue);
+}
+
+int parseCommand(const char* command){
+  if(strncmp("/init", command, LEN_SERIAL_BUFFER) == 0){
+    return CMD_INIT;
+  }else if(strncmp(">relay", command, 5) == 0 && command[6] >= '0' && command[6] <= '7'){
+    DS("relay command number ");
+    DL(command[6]);
+    return command[6] - '0' + CMD_RELAY_BASE;
+  }else{
+    return CMD_UNKNOWN;
+  }
+}
+
+int getValueFromSerial(char *valueBuffer, unsigned int len){
+  while(!Serial.available()){
+    continue;
+  }
+    
+  int rc = Serial.readBytesUntil('\n', valueBuffer, len);
+  if(rc > 0){
+    valueBuffer[rc] = '\0';
+  }
+  return rc;
+}
+
+void executeCommand(const int parsedCmd, const char* commandValue){
+  if(parsedCmd >= 2 && parsedCmd <= 9){
+    setRelay(parsedCmd - CMD_RELAY_BASE, commandValue);
+    return;
+  }
+  
+  switch(parsedCmd){
+    case 1:
+      initAll();
+      break;
+    default:
+      DL("Command unkown");
+  }
+}
+
+void initAll(){
+  DL("Initializing...");
+  int mode;
+  for(int i = 0; i < RELAY_COUNT; i++){
+    mode = digitalRead(RELAY_OFFSET + i);
+    Serial.print(">relay");
+    Serial.println(i);
+    if(mode == HIGH){
+      Serial.println("ON");
+    }else{
+      Serial.println("OFF");
+    }
+  }
+}
+
+void setRelay(int relay, const char *commandValue){
+  
+  int mode;
+  if(strncmp("ON", commandValue, 2) == 0){
+    mode = HIGH;
+  }else{
+    mode = LOW;
+  }
+  
+  DS("Setting relay ");
+  DS(relay);
+  DS(" to ");
+  DL(mode);
+  digitalWrite(RELAY_OFFSET + relay, mode);
 }

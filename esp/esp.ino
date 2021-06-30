@@ -5,7 +5,7 @@
 
 //#define DS(...) Serial.print(__VA_ARGS__);
 //#define DL(...) Serial.println(__VA_ARGS__);
-#define DL(...) 
+#define DL(...)
 #define DS(...)
 
 #define SETTINGS_FILE "/settings.ini"
@@ -35,7 +35,7 @@ void setup() {
 
   // We start by connecting to a WiFi network
   getSettings();
-  
+
   /* Explicitly set the ESP8266 to be a WiFi-client, otherwise, it by default,
      would try to act as both a client and an access-point and could cause
      network-issues with your other WiFi-devices on your WiFi-network. */
@@ -46,7 +46,7 @@ void setup() {
     delay(500);
     DS(".");
   }
-  
+
   DL("WiFi connected");
   DS("IP address: ");
   DL(WiFi.localIP());
@@ -69,13 +69,13 @@ void loop()
   handleSerialInput();
 }
 
-void handleSerialInput(){
+void handleSerialInput() {
   int len;
   bool subscribe;
   char topic[LEN_SERIAL_BUFFER];
   char value[LEN_SERIAL_BUFFER];
-  
-  if(!Serial.available())
+
+  if (!Serial.available())
     return;
 
   strncpy(topic, SETTING_MQTT_TOPIC, LEN_MQTT_TOPIC);
@@ -83,7 +83,7 @@ void handleSerialInput(){
 
   DL("Got something on serial");
   len = Serial.readBytesUntil('\n', subTopicStart, LEN_SERIAL_BUFFER - strlen(topic));
-  if(len <= 0){
+  if (len <= 0) {
     DL("Serial topic could not be read");
     return;
   }
@@ -91,21 +91,21 @@ void handleSerialInput(){
   char command = subTopicStart[0];
   subTopicStart[0] = '/';
   subTopicStart[len] = '\0';
-  
-  switch(command){
+
+  switch (command) {
     case '>':
-      while(!Serial.available()){
+      while (!Serial.available()) {
         //DL("Waiting on payload");
         continue;
       }
-      
+
       len = Serial.readBytesUntil('\n', value, LEN_SERIAL_BUFFER);
-      if(len <= 0){
+      if (len <= 0) {
         DL("Payload could not be read");
         return;
       }
       value[len] = '\0';
-    
+
       mqttClient.publish(topic, value, true);
       DS("publishing to topic [ ");
       DS(topic);
@@ -146,27 +146,28 @@ void reconnectMqqt() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  payload[length] = '\0';
   char *subtopic = topic + strlen(SETTING_MQTT_TOPIC);
   DS("Message arrived [");
   DS(subtopic);
   DS("]: ");
+
+  payload[length] = '\0';
   DL((char*) payload);
 
   subtopic[0] = '>';
   Serial.println(subtopic);
   Serial.println((char*) payload);
-  
+
 }
 
 void getSettings()
 {
-   DL("Reading settings....");
-      
-   if (!SPIFFS.begin())
+  DL("Reading settings....");
+
+  if (!SPIFFS.begin())
     while (1)
       DL("SPIFFS.begin() failed");
-  
+
   SPIFFSIniFile ini(SETTINGS_FILE);
   if (!ini.open()) {
     DL("Ini file ");
@@ -175,11 +176,11 @@ void getSettings()
     // Cannot do anything else
     while (1) ;
   }
-  
+
   if (ini.getValue("wifi", "ssid", SETTING_WIFI_SSID, LEN_WIFI_SSID)) {
     DS("read setting ssid => ");
     DL(SETTING_WIFI_SSID);
-  }else {
+  } else {
     DS("Could not read ssid");
     // Cannot do anything else
     while (1) ;
@@ -188,7 +189,7 @@ void getSettings()
   if (ini.getValue("wifi", "pwd", SETTING_WIFI_PWD, LEN_WIFI_PWD)) {
     DS("read setting password => ");
     DL(SETTING_WIFI_PWD);
-  }else {
+  } else {
     DS("Could not read password for wifi");
     // Cannot do anything else
     while (1) ;
@@ -197,7 +198,7 @@ void getSettings()
   if (ini.getValue("mqtt", "server", SETTING_MQTT_SERVER, LEN_MQTT_SERVER)) {
     DS("read setting mqtt server => ");
     DL(SETTING_MQTT_SERVER);
-  }else {
+  } else {
     DS("Could not read mqtt server");
     // Cannot do anything else
     while (1) ;
@@ -205,8 +206,8 @@ void getSettings()
 
   if (ini.getValue("mqtt", "port", SETTING_MQTT_PORT_STR, LEN_MQTT_PORT, SETTING_MQTT_PORT)) {
     DS("read setting mqtt port => ");
-    DL(SETTING_MQTT_PORT);  
-  }else {
+    DL(SETTING_MQTT_PORT);
+  } else {
     DL("Could not read mqtt port");
     // Cannot do anything else
     while (1) ;
@@ -215,10 +216,10 @@ void getSettings()
   if (ini.getValue("mqtt", "topic", SETTING_MQTT_TOPIC, LEN_MQTT_TOPIC)) {
     DS("read setting mqtt topic => ");
     DL(SETTING_MQTT_TOPIC);
-  }else {
+  } else {
     DS("Could not read mqtt topic");
     // Cannot do anything else
     while (1) ;
   }
-  
+
 }
