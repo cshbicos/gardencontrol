@@ -3,10 +3,10 @@
 #include <SPIFFSIniFile.h>
 #include <PubSubClient.h>
 
-#define DS(...) Serial.print(__VA_ARGS__);
-#define DL(...) Serial.println(__VA_ARGS__);
-//#define DL(...) 
-//#define DS(...)
+//#define DS(...) Serial.print(__VA_ARGS__);
+//#define DL(...) Serial.println(__VA_ARGS__);
+#define DL(...) 
+#define DS(...)
 
 #define SETTINGS_FILE "/settings.ini"
 #define LEN_WIFI_SSID 50
@@ -53,6 +53,9 @@ void setup() {
 
   mqttClient.setServer(SETTING_MQTT_SERVER, SETTING_MQTT_PORT);
   mqttClient.setCallback(callback);
+
+  Serial.println("starting");
+
 }
 
 
@@ -92,7 +95,7 @@ void handleSerialInput(){
   switch(command){
     case '>':
       while(!Serial.available()){
-      DL("Waiting on payload");
+        //DL("Waiting on payload");
         continue;
       }
       
@@ -130,7 +133,8 @@ void reconnectMqqt() {
     DL("Attempting MQTT connection...");
     // Attempt to connect
     if (mqttClient.connect("gardenControl")) {
-      DL("connected");
+      DL("connected - initializing mqtt now");
+      Serial.println("/init");
     } else {
       DL("failed, rc=");
       DS(mqttClient.state());
@@ -143,10 +147,16 @@ void reconnectMqqt() {
 
 void callback(char* topic, byte* payload, unsigned int length) {
   payload[length] = '\0';
+  char *subtopic = topic + strlen(SETTING_MQTT_TOPIC);
   DS("Message arrived [");
-  DS(topic);
+  DS(subtopic);
   DS("]: ");
-  DL((char*) payload);  
+  DL((char*) payload);
+
+  subtopic[0] = '>';
+  Serial.println(subtopic);
+  Serial.println((char*) payload);
+  
 }
 
 void getSettings()
