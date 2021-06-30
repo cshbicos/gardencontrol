@@ -118,6 +118,8 @@ void initAll(){
     }else{
       Serial.println("OFF");
     }
+    Serial.print("+relay");
+    Serial.println(i);
   }
 }
 
