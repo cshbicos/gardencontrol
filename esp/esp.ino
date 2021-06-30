@@ -3,6 +3,10 @@
 #include <SPIFFSIniFile.h>
 #include <PubSubClient.h>
 
+#define DS(...) Serial.print(__VA_ARGS__);
+#define DL(...) Serial.println(__VA_ARGS__);
+//#define DL(...) 
+//#define DS(...)
 
 #define SETTINGS_FILE "/settings.ini"
 #define LEN_WIFI_SSID 50
@@ -10,6 +14,8 @@
 #define LEN_MQTT_TOPIC 100
 #define LEN_MQTT_SERVER 50
 #define LEN_MQTT_PORT 50
+
+#define LEN_SERIAL_BUFFER 200
 
 char SETTING_WIFI_SSID[LEN_WIFI_SSID];
 char SETTING_WIFI_PWD[LEN_WIFI_PWD];
@@ -38,13 +44,12 @@ void setup() {
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    DS(".");
   }
-
-  Serial.println("");
-  Serial.println("WiFi connected");
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
+  
+  DL("WiFi connected");
+  DS("IP address: ");
+  DL(WiFi.localIP());
 
   mqttClient.setServer(SETTING_MQTT_SERVER, SETTING_MQTT_PORT);
   mqttClient.setCallback(callback);
@@ -57,20 +62,79 @@ void loop()
     reconnectMqqt();
   }
   mqttClient.loop();
+
+  handleSerialInput();
+}
+
+void handleSerialInput(){
+  int len;
+  bool subscribe;
+  char topic[LEN_SERIAL_BUFFER];
+  char value[LEN_SERIAL_BUFFER];
+  
+  if(!Serial.available())
+    return;
+
+  strncpy(topic, SETTING_MQTT_TOPIC, LEN_MQTT_TOPIC);
+  char * subTopicStart = topic + strlen(topic);
+
+  DL("Got something on serial");
+  len = Serial.readBytesUntil('\n', subTopicStart, LEN_SERIAL_BUFFER - strlen(topic));
+  if(len <= 0){
+    DL("Serial topic could not be read");
+    return;
+  }
+
+  char command = subTopicStart[0];
+  subTopicStart[0] = '/';
+  subTopicStart[len] = '\0';
+  
+  switch(command){
+    case '>':
+      while(!Serial.available()){
+      DL("Waiting on payload");
+        continue;
+      }
+      
+      len = Serial.readBytesUntil('\n', value, LEN_SERIAL_BUFFER);
+      if(len <= 0){
+        DL("Payload could not be read");
+        return;
+      }
+      value[len] = '\0';
+    
+      mqttClient.publish(topic, value, true);
+      DS("publishing to topic [ ");
+      DS(topic);
+      DS("] : ");
+      DL(value);
+      break;
+    case '-':
+      DS("Unsubscribing topic ");
+      DL(topic);
+      mqttClient.unsubscribe(topic);
+      break;
+    case '+':
+      DS("Subscribing to topic ");
+      DL(topic);
+      mqttClient.subscribe(topic);
+      break;
+    default:
+      DL("Unknown topic command");
+  }
 }
 
 void reconnectMqqt() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
-    Serial.println("Attempting MQTT connection...");
+    DL("Attempting MQTT connection...");
     // Attempt to connect
     if (mqttClient.connect("gardenControl")) {
-      Serial.println("connected");
-      mqttClient.subscribe(SETTING_MQTT_TOPIC);
+      DL("connected");
     } else {
-      Serial.print("failed, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" try again in 5 seconds");
+      DL("failed, rc=");
+      DS(mqttClient.state());
+      DL(" try again in 5 seconds");
       // Wait 5 seconds before retrying
       delay(5000);
     }
@@ -78,72 +142,71 @@ void reconnectMqqt() {
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-
-  
+  payload[length] = '\0';
+  DS("Message arrived [");
+  DS(topic);
+  DS("]: ");
+  DL((char*) payload);  
 }
 
 void getSettings()
 {
-   Serial.println("Reading settings....");
-
+   DL("Reading settings....");
       
    if (!SPIFFS.begin())
     while (1)
-      Serial.println("SPIFFS.begin() failed");
+      DL("SPIFFS.begin() failed");
   
   SPIFFSIniFile ini(SETTINGS_FILE);
   if (!ini.open()) {
-    Serial.print("Ini file ");
-    Serial.print(SETTINGS_FILE);
-    Serial.println(" does not exist");
+    DL("Ini file ");
+    DS(SETTINGS_FILE);
+    DL(" does not exist");
     // Cannot do anything else
     while (1) ;
   }
   
   if (ini.getValue("wifi", "ssid", SETTING_WIFI_SSID, LEN_WIFI_SSID)) {
-    Serial.print("read setting ssid => ");
-    Serial.println(SETTING_WIFI_SSID);
+    DS("read setting ssid => ");
+    DL(SETTING_WIFI_SSID);
   }else {
-    Serial.print("Could not read ssid");
+    DS("Could not read ssid");
     // Cannot do anything else
     while (1) ;
   }
 
   if (ini.getValue("wifi", "pwd", SETTING_WIFI_PWD, LEN_WIFI_PWD)) {
-    Serial.print("read setting password => ");
-    Serial.println(SETTING_WIFI_PWD);
+    DS("read setting password => ");
+    DL(SETTING_WIFI_PWD);
   }else {
-    Serial.print("Could not read password for wifi");
+    DS("Could not read password for wifi");
     // Cannot do anything else
     while (1) ;
   }
 
   if (ini.getValue("mqtt", "server", SETTING_MQTT_SERVER, LEN_MQTT_SERVER)) {
-    Serial.print("read setting mqtt server => ");
-    Serial.println(SETTING_MQTT_SERVER);
+    DS("read setting mqtt server => ");
+    DL(SETTING_MQTT_SERVER);
   }else {
-    Serial.print("Could not read mqtt server");
+    DS("Could not read mqtt server");
     // Cannot do anything else
     while (1) ;
   }
 
   if (ini.getValue("mqtt", "port", SETTING_MQTT_PORT_STR, LEN_MQTT_PORT, SETTING_MQTT_PORT)) {
-    Serial.print("read setting mqtt port => ");
-    Serial.println(SETTING_MQTT_PORT);  
+    DS("read setting mqtt port => ");
+    DL(SETTING_MQTT_PORT);  
   }else {
-    Serial.println("Could not read mqtt port");
+    DL("Could not read mqtt port");
     // Cannot do anything else
     while (1) ;
   }
 
   if (ini.getValue("mqtt", "topic", SETTING_MQTT_TOPIC, LEN_MQTT_TOPIC)) {
-    Serial.print("read setting mqtt topic => ");
-    Serial.println(SETTING_MQTT_TOPIC);
+    DS("read setting mqtt topic => ");
+    DL(SETTING_MQTT_TOPIC);
   }else {
-    Serial.print("Could not read mqtt topic");
+    DS("Could not read mqtt topic");
     // Cannot do anything else
     while (1) ;
   }
