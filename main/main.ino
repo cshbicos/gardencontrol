@@ -1,6 +1,6 @@
 
 //#define DS(...) Serial.print(__VA_ARGS__);
-//#define DL(...) Serial.println(__VA_ARGS__);
+//#define DL(...) Serial.print(__VA_ARGS__); Serial.print("\n");
 #define DL(...)
 #define DS(...)
 
@@ -12,7 +12,7 @@
 #define CMD_UNKNOWN 0
 #define CMD_INIT 1
 #define CMD_RELAY_BASE 2
-//... until CMD_RELAY 9
+#define CMD_RELAY_MAX 9
 
 const int status_led = LED_BUILTIN;
 
@@ -50,7 +50,8 @@ void loop(){
   }
   DS("Found command ");
   DL(parsedCmd);
-  
+
+  //get additional information if required (depending on command)
   switch(command[0]){
     case '>':
       if (getValueFromSerial(commandValue, LEN_SERIAL_BUFFER) <= 0) {
@@ -67,6 +68,10 @@ void loop(){
   executeCommand(parsedCmd, commandValue);
 }
 
+/**
+ * Parse the command and return a number that is easier to work with
+ * 
+ */
 int parseCommand(const char* command){
   if(strncmp("/init", command, LEN_SERIAL_BUFFER) == 0){
     return CMD_INIT;
@@ -79,6 +84,10 @@ int parseCommand(const char* command){
   }
 }
 
+/**
+ * Read the next value from serial
+ *  - A "value" is a entire string line, terminated by "\n"
+ */
 int getValueFromSerial(char *valueBuffer, unsigned int len){
   while(!Serial.available()){
     continue;
@@ -91,8 +100,13 @@ int getValueFromSerial(char *valueBuffer, unsigned int len){
   return rc;
 }
 
+/**
+ * Execute a command
+ *  - parsed command integer as per method parseCommand()
+ *  - commandValue as a string
+ */
 void executeCommand(const int parsedCmd, const char* commandValue){
-  if(parsedCmd >= 2 && parsedCmd <= 9){
+  if(parsedCmd >= 2 && parsedCmd <= CMD_RELAY_MAX){
     setRelay(parsedCmd - CMD_RELAY_BASE, commandValue);
     return;
   }
@@ -106,23 +120,38 @@ void executeCommand(const int parsedCmd, const char* commandValue){
   }
 }
 
+/**
+ * Send initialization information for each relay and
+ * subsequently subscibe to the MQTT channel
+ * 
+ */
 void initAll(){
   DL("Initializing...");
+  Serial.print("/initStart\n");
+  
   int mode;
   for(int i = 0; i < RELAY_COUNT; i++){
     mode = digitalRead(RELAY_OFFSET + i);
+    //publish the current value
     Serial.print(">relay");
-    Serial.println(i);
+    Serial.print(i);
+    Serial.print("\n");
     if(mode == HIGH){
-      Serial.println("ON");
+      Serial.print("ON\n");
     }else{
-      Serial.println("OFF");
+      Serial.print("OFF\n");
     }
+
+    //subscribe to the value moving forward
     Serial.print("+relay");
-    Serial.println(i);
+    Serial.print(i);
+    Serial.print("\n");
   }
 }
 
+/**
+ * Set the relay status based on what the MQTT channel wanted
+ */
 void setRelay(int relay, const char *commandValue){
   
   int mode;

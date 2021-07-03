@@ -4,9 +4,11 @@
 #include <PubSubClient.h>
 
 //#define DS(...) Serial.print(__VA_ARGS__);
-//#define DL(...) Serial.println(__VA_ARGS__);
-#define DL(...)
-#define DS(...)
+//#define DL(...) Serial.print(__VA_ARGS__); Serial.print("\n");
+//#define DL(...) debugToMqtt(__VA_ARGS__, true);
+//#define DS(...) debugToMqtt(__VA_ARGS__, false);
+#define DL(...) 
+#define DS(...) 
 
 #define SETTINGS_FILE "/settings.ini"
 #define LEN_WIFI_SSID 50
@@ -17,20 +19,32 @@
 
 #define LEN_SERIAL_BUFFER 200
 
+#define LEN_DEBUG_BUFFER 200
+
 char SETTING_WIFI_SSID[LEN_WIFI_SSID];
 char SETTING_WIFI_PWD[LEN_WIFI_PWD];
 char SETTING_MQTT_SERVER[LEN_MQTT_SERVER];
-int SETTING_MQTT_PORT = 0;
+int  SETTING_MQTT_PORT = 0;
 char SETTING_MQTT_TOPIC[LEN_MQTT_TOPIC];
-
 char SETTING_MQTT_PORT_STR[LEN_MQTT_PORT];
+
+char DEBUG_BUFFER[LEN_DEBUG_BUFFER];
+bool ARDUINO_INIT;
 
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-
-
+/**
+ * Initialize the ESP board
+ * 
+ * - Read settings for wifi and MQTT
+ * - Connect to wifi
+ * - Initialize the MQTT connection
+ */
 void setup() {
+  DEBUG_BUFFER[0] = '\0';
+  ARDUINO_INIT = false;
+  
   Serial.begin(115200);
 
   // We start by connecting to a WiFi network
@@ -54,21 +68,42 @@ void setup() {
   mqttClient.setServer(SETTING_MQTT_SERVER, SETTING_MQTT_PORT);
   mqttClient.setCallback(callback);
 
-  Serial.println("starting");
+  //this is not something the Arduino will understand, but just to create a newline
+  //so the next command is "pure"
+  Serial.print("starting\n");
 
 }
 
-
+/**
+ * Do every time
+ */
 void loop()
 {
   if (!mqttClient.connected()) {
+    //if we are disconnected, try to reconnect
     reconnectMqqt();
+    //because we (were?) disconnected, we are uninitialized
+    ARDUINO_INIT = false;
   }
+  
+  if(ARDUINO_INIT == false){
+    //ask the Arduino to initialize itself
+    //this will run until the Arduino response with 
+    // a "/initStart" command
+    Serial.print("/init\n");
+  }
+
+  //check if there are any subscriptions to be fetched
   mqttClient.loop();
 
+  //check what the Arduino has been saying to us
   handleSerialInput();
 }
 
+/**
+ * Retrieve commands from the Arduino
+ * 
+ */
 void handleSerialInput() {
   int len;
   bool subscribe;
@@ -76,8 +111,11 @@ void handleSerialInput() {
   char value[LEN_SERIAL_BUFFER];
 
   if (!Serial.available())
+    //nothing to be done
     return;
 
+  //preparing the full topic string by setting the "main topic"
+  // and then putting the subTopicStart pointer to where the subtopic begins
   strncpy(topic, SETTING_MQTT_TOPIC, LEN_MQTT_TOPIC);
   char * subTopicStart = topic + strlen(topic);
 
@@ -87,6 +125,8 @@ void handleSerialInput() {
     DL("Serial topic could not be read");
     return;
   }
+  DS("Read command line ");
+  DL(subTopicStart);
 
   char command = subTopicStart[0];
   subTopicStart[0] = '/';
@@ -95,7 +135,7 @@ void handleSerialInput() {
   switch (command) {
     case '>':
       while (!Serial.available()) {
-        //DL("Waiting on payload");
+        //active waiting on payload
         continue;
       }
 
@@ -105,9 +145,11 @@ void handleSerialInput() {
         return;
       }
       value[len] = '\0';
+      DS("Read payload line ");
+      DL(value);
 
       mqttClient.publish(topic, value, true);
-      DS("publishing to topic [ ");
+      DS("publishing to topic [");
       DS(topic);
       DS("] : ");
       DL(value);
@@ -122,11 +164,20 @@ void handleSerialInput() {
       DL(topic);
       mqttClient.subscribe(topic);
       break;
+    case '/':
+      if(strncmp("/initStart", subTopicStart, 10) == 0){
+        ARDUINO_INIT = true;
+      }
+      break;
     default:
       DL("Unknown topic command");
   }
 }
 
+/**
+ * Reconnect (or initially connect) to Mosquitto server
+ * 
+ */
 void reconnectMqqt() {
   // Loop until we're reconnected
   while (!mqttClient.connected()) {
@@ -134,7 +185,6 @@ void reconnectMqqt() {
     // Attempt to connect
     if (mqttClient.connect("gardenControl")) {
       DL("connected - initializing mqtt now");
-      Serial.println("/init");
     } else {
       DL("failed, rc=");
       DS(mqttClient.state());
@@ -145,21 +195,63 @@ void reconnectMqqt() {
   }
 }
 
+/**
+ * Debugging output to MQTT instead Serial
+ * - to debug live Arduino-ESP communication
+ */
+void debugToMqtt(const int intVal, bool flushBuffer){
+  char buf[12];
+  debugToMqtt(itoa(intVal, buf, 10), flushBuffer);
+}
+
+/**
+ * Debugging output to MQTT instead Serial
+ * - to debug live Arduino-ESP communication
+ */
+void debugToMqtt(const char * txt, bool flushBuffer){
+  strcat(DEBUG_BUFFER, txt);
+  if(!flushBuffer)
+    return;
+    
+  if (mqttClient.connected()) {
+    mqttClient.publish("gardencontrol/debug", DEBUG_BUFFER, false);
+  }
+  DEBUG_BUFFER[0] = '\0';
+}
+
+/**
+ * Callback when a subscribed MQTT channel changes values
+ */
 void callback(char* topic, byte* payload, unsigned int length) {
-  char *subtopic = topic + strlen(SETTING_MQTT_TOPIC);
-  DS("Message arrived [");
+  char subtopic[LEN_MQTT_TOPIC];
+  char serialPayload[LEN_SERIAL_BUFFER];
+
+  //copy the payload and topic because the debugging calls might override those buffers
+  //deep within the PublishSubscribe framework!
+  strncpy(subtopic, topic + strlen(SETTING_MQTT_TOPIC), LEN_MQTT_TOPIC);
+  strncpy(serialPayload, (char*)payload, length);
+  serialPayload[length] = '\0';
+  
+  DS("MQTT Message arrived [");
   DS(subtopic);
   DS("]: ");
-
-  payload[length] = '\0';
-  DL((char*) payload);
+  DL((char*) serialPayload);
 
   subtopic[0] = '>';
-  Serial.println(subtopic);
-  Serial.println((char*) payload);
+
+  Serial.print(subtopic);
+  Serial.print("\n");
+  Serial.print((char*) serialPayload);
+  Serial.print("\n");
 
 }
 
+/**
+ * Load settings from attached flash storage
+ * - Loads all settings from an ini file
+ * 
+ * Hint: Every buffer for the final value must be large enough to contain any given line in the ini file!
+ */
 void getSettings()
 {
   DL("Reading settings....");
