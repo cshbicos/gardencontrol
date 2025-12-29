@@ -1,17 +1,12 @@
 # GardenControl
-A Arduino based relay controller for my garden using wifi and MQTT
 
-## Hardware
-- Basically the hardware mentioned in https://github.com/Jaycar-Electronics/WiFi-Relay-Controller
-- A home wifi :)
+An arduino based controller project for my garden automations
 
-## Software
-- A mosquitto server (assumption: no authentication)
-- The Arduino PublishSubscribe Library (https://pubsubclient.knolleary.net/)
-- The SPIFFSIniFile Library https://github.com/yurilopes/SPIFFSIniFile
+There are two versions of this project:
 
-## Howto use
-- Read https://github.com/Jaycar-Electronics/WiFi-Relay-Controller to get an idea of what needs to be don
-- Copy the esp/data/settings.ini.tmlp to esp/data/settings.ini, adjust and upload as per documentation in docu/ directory 
-- Deploy ESP and Uno code
-- Check your MQTT server - you should see various channels pop up
+1. An initial WIFI based version with a ESP/UNO based board (the older version)
+2. An ethernet shield based version with a simple UNO board (the newer version)
+
+Both versions connect to a relay to control Solenoid valves (or whatever you like), the shield version also handles a moisture sensor.
+
+See the README.md in the individual subfolders for further details.

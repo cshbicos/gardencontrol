@@ -1,8 +1,8 @@
-
-//#define DS(...) Serial.print(__VA_ARGS__);
-//#define DL(...) Serial.print(__VA_ARGS__); Serial.print("\n");
-#define DL(...)
-#define DS(...)
+//for debugging use the upper two, for production the lower two
+#define DEBUG_STRING(...) Serial.print(__VA_ARGS__);
+#define DEBUG_LINE(...) Serial.print(__VA_ARGS__); Serial.print("\n");
+//#define DEBUG_STRING(...)
+//#define DEBUG_LINE(...)
 
 #define RELAY_COUNT 8
 #define RELAY_OFFSET 2
