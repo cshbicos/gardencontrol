@@ -11,11 +11,44 @@ EthernetClient _ethClient = EthernetClient();
 PubSubClient _mqttClient = PubSubClient(_ethClient);
 //Web Server, always on port 80
 EthernetServer _httpServer = EthernetServer(80);
-//MQTT Settings
-struct MQTTSettings _mqttSettings = {};
-//Moisture Settings
-struct Moisture _moisture = { 0 };
 
+//Board Config
+struct BoardConfig _boardConfig = {};
+//MQTT Runtime
+struct MQTTRuntime _mqttRuntime = {};
+//Moisture Runtime
+struct MoistureRuntime _moistureRuntime = { };
+
+
+/**
+ * Board is hard coded - if you need to change this, you probably had to physically
+ * rewire stuff anyway... just bite the bullet and recompile!
+ */
+void setupBoard(BoardConfig *board){
+  board->boardVersion = 2;
+
+  board->digitalPin[0] = UNUSED;
+  board->digitalPin[1] = UNUSED;
+  board->digitalPin[2] = RELAY;
+  board->digitalPin[3] = RELAY;
+  board->digitalPin[4] = RELAY;
+  board->digitalPin[5] = RELAY;
+  board->digitalPin[6] = RELAY;
+  board->digitalPin[7] = RELAY;
+  board->digitalPin[8] = RELAY;
+  board->digitalPin[9] = RELAY;
+  board->digitalPin[10] = UNUSED;
+  board->digitalPin[11] = UNUSED;
+  board->digitalPin[12] = UNUSED;
+  board->digitalPin[13] = UNUSED;
+
+  board->analogPin[0] = MOISTURE;
+  board->analogPin[1] = UNUSED;
+  board->analogPin[2] = UNUSED;
+  board->analogPin[3] = UNUSED;
+  board->analogPin[4] = UNUSED;
+  board->analogPin[5] = UNUSED;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -24,24 +57,29 @@ void setup() {
 
   while (Ethernet.begin(MAC_ADDRESS) == 0)
     ;  // waiting for a DHCP package... need one to function
-
-  //setup relays to switch them all off!
-  setupRelays();
-
+  
   DEBUG_STRING(F("My IP address: "));
   DEBUG_LINE(Ethernet.localIP());
 
   //read MQTT settings from the EEPROM
 
   //set up the runtime
+  globalRuntime.boardConfig = &_boardConfig;
+  setupBoard(globalRuntime.boardConfig);
+
   globalRuntime.ethClient = &_ethClient;
   globalRuntime.mqttClient = &_mqttClient;
   globalRuntime.httpServer = &_httpServer;
-  globalRuntime.moisture = &_moisture;
-  globalRuntime.mqttSettings = &_mqttSettings;
 
+  globalRuntime.moistureRuntime = &_moistureRuntime;
+  globalRuntime.mqttRuntime = &_mqttRuntime;
 
-  readMQTTSettings(globalRuntime.mqttSettings);
+  readPersistedSettings(&globalRuntime);
+
+  //setup consumers
+  setupMQTT(&globalRuntime);
+  setupMoisture(&globalRuntime);
+  setupRelays(&globalRuntime);
 
   // start listening for HTTP clients
   globalRuntime.httpServer->begin();
@@ -50,32 +88,33 @@ void setup() {
 void loop() {
 
   //always run the webserver
-  runWebServerLoop(&globalRuntime);
+  runHTTPServerLoop(&globalRuntime);
 
-  if(globalRuntime.mqttSettings->state == INVALID)
+  if(globalRuntime.mqttRuntime->state == INVALID)
     return;
 
   //either MQTT is DISCONNECTED or NEW - try to connect
-  if (globalRuntime.mqttSettings->state != CONNECTED) {
+  if (globalRuntime.mqttRuntime->state != CONNECTED) {
     //try to do the actual MQTT connection to the server
     connectToMQTT(&globalRuntime);
 
     if (globalRuntime.mqttClient->connected()) {
       //we connected succesfully for the first time after not being connected
 
-      //sending the current relay states to MQTT for sync purposes
-      initAllRelays(&globalRuntime);
+      //modules might need to interact with MQTT
+      connectRelays(&globalRuntime);
+      connectMoisture(&globalRuntime);
     }
   }
 
   //are we still connected?
   if (!globalRuntime.mqttClient->connected()) {
     //we're disconnected - no point doing anything else here until we connect
-    globalRuntime.mqttSettings->state = DISCONNECTED;
+    globalRuntime.mqttRuntime->state = DISCONNECTED;
     
   } else {
     //this probably does nothing, but let's just make sure we mark things as such
-    globalRuntime.mqttSettings->state = CONNECTED;
+    globalRuntime.mqttRuntime->state = CONNECTED;
 
     //handle incoming MQTT messages
     globalRuntime.mqttClient->loop();

@@ -1,17 +1,22 @@
 #include "headers.h"
 
-#define RELAY_COUNT 8
-#define RELAY_OFFSET 2
+
+#define RELAY_OFFSET 0
 
 /**
  * Safety: switch off all relays at startup... Assuming they are solanoids, that will be a good good idea!
  */
-void setupRelays() {
-  for (int i = 0; i < RELAY_COUNT; i++) {
-    pinMode(RELAY_OFFSET + i, LOW);
+void setupRelays(Runtime *runtime) {
 
-    DEBUG_STRING("set relay on pin")
-    DEBUG_LINE(RELAY_OFFSET + i)
+  for (int i = 0; i < DIGITAL_PIN_COUNT; i++) {
+    if (runtime->boardConfig->digitalPin[i] != RELAY)
+      continue;
+
+    pinMode(RELAY_OFFSET + i, OUTPUT);
+    digitalWrite(RELAY_OFFSET + i, LOW);
+
+    DEBUG_STRING(F("set relay on pin"))
+    DEBUG_LINE(i)
   }
 }
 
@@ -20,37 +25,48 @@ void setupRelays() {
  * Send initialization information for each relay and
  * subsequently subscibe to the MQTT channel
  */
-void initAllRelays(Runtime *runtime) {
-  DEBUG_LINE("Initializing Relays to MQTT");
+void connectRelays(Runtime *runtime) {
+  DEBUG_LINE(F("Initializing Relays to MQTT"));
 
-  int mode;
-  for (int i = 0; i < RELAY_COUNT; i++) {
-    String fullTopic = "/" + runtime->mqttSettings->topic + "/relay/" + i;
-    mode = digitalRead(RELAY_OFFSET + i);
+  int relay = 0;
+  for (int i = 0; i < DIGITAL_PIN_COUNT; i++) {
+    if (runtime->boardConfig->digitalPin[i] != RELAY)
+      continue;
 
+    int pinVal = digitalRead(RELAY_OFFSET + i);
+
+
+    String topic = runtime->mqttRuntime->topic + "/relay/" + relay;
     //publish the current value
-    if (mode == HIGH) {
-      runtime->mqttClient->publish(fullTopic.c_str(), "ON", true);
+    if (pinVal == HIGH) {
+      runtime->mqttClient->publish(topic.c_str(), "ON", true);
     } else {
-      runtime->mqttClient->publish(fullTopic.c_str(), "OFF", true);
+      runtime->mqttClient->publish(topic.c_str(), "OFF", true);
     }
 
-    runtime->mqttClient->subscribe(fullTopic.c_str());
+    runtime->mqttClient->subscribe(topic.c_str());
+    relay++;
   }
 }
 
-void switchRelay(const char *subtopic, String *value) {
+void handleRelayMQTTMessage(Runtime *runtime, String *subtopic, String *value) {
+  int relay = -1;
 
-  int relay = atoi(subtopic);
-  if (relay >= 0 && relay < RELAY_COUNT) {
-    DEBUG_STRING("Setting relay ")
-    DEBUG_STRING(subtopic)
-    DEBUG_STRING(" to ")
-    DEBUG_LINE(value->c_str())
+  for (int i = 0; i < DIGITAL_PIN_COUNT; i++) {
+    if (runtime->boardConfig->digitalPin[i] != RELAY)
+      continue;
 
-    if (value->equals("ON"))
-      pinMode(RELAY_OFFSET + relay, HIGH);
-    else
-      pinMode(RELAY_OFFSET + relay, LOW);
+    relay++;
+    
+    if(relay != atoi(subtopic->c_str()))
+      continue;
+
+    if (value->equals("ON")) {
+      DEBUG_LINE(F("Setting relay ON"))
+      digitalWrite(RELAY_OFFSET + i, HIGH);
+    } else {
+      DEBUG_LINE(F("Setting relay OFF"))
+      digitalWrite(RELAY_OFFSET + i, LOW);
+    }
   }
 }
